@@ -1,24 +1,46 @@
 #define _CRT_SECURE_NO_WARNINGS
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <WinSock2.h>
+#include <time.h>
+#define WIN32_LEAN_AND_MEAN 
 #pragma comment(lib, "Ws2_32.lib")
-#pragma warning(disable:C4996)
-#define BUF_SIZE 3000
 typedef unsigned long long u64;
 u64 GetMicroCounter();
+#define BUF_SIZE 3000
 
+int send_simul(SOCKET s, const char* buf, int len, int flags)
+{
+	srand((unsigned)time(NULL));
+	len = 0;
+	if (rand() % 20 != 1)
+	{
+		len = send(s, buf, len, flags);
+	}
+	return len;
+}
 int main(int argc, char **argv) {
+	u64 start, end;
 	WSADATA wsaData;
 	struct sockaddr_in server_addr;
 	SOCKET s;
-	u64 start, end;
+
+
 
 	WSAStartup(MAKEWORD(2, 2), &wsaData);
 
-	if ((s = socket(PF_INET, SOCK_DGRAM, 0)) < 0) {
+	if ((s = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
 		printf("Socket Creat Error.\n");
+		exit(1);
+	}
+
+	memset(&server_addr, 0, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = inet_addr("1.224.240.122");
+	server_addr.sin_port = htons(5000);
+
+	if (connect(s, (SOCKADDR *)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
+		printf("Socket Connection Error.\n");
 		exit(1);
 	}
 
@@ -27,23 +49,16 @@ int main(int argc, char **argv) {
 	int totalBufferNum;
 	int BufferNum;
 	int sendBytes;
-	int file_size;  // total file size
-	int totalSendBytes;  // received file size
-
+	long totalSendBytes;
+	long file_size;
 	char buf[BUF_SIZE];
-
+	char buf2[BUF_SIZE];
 	FILE *fp;
 	fp = fopen("android2.mp4", "rb");
 	if (fp == NULL) {
 		printf("File not Exist");
 		exit(1);
 	}
-	start = GetMicroCounter();
-	memset(&server_addr, 0, sizeof(server_addr));
-	server_addr.sin_family = AF_INET;
-	server_addr.sin_addr.s_addr = inet_addr("1.224.240.122");
-	server_addr.sin_port = htons(5000);
-
 	fseek(fp, 0, SEEK_END);
 	file_size = ftell(fp);
 	totalBufferNum = file_size / sizeof(buf) + 1;
@@ -52,21 +67,26 @@ int main(int argc, char **argv) {
 	totalSendBytes = 0;
 
 	_snprintf(buf, sizeof(buf), "%d", file_size);
-	sendBytes = sendto(s, buf, sizeof(char) * 1024, 0, (SOCKADDR *)&server_addr, sizeof(server_addr));
+	sendBytes = send(s, buf, sizeof(buf), 0);
 
+	start = GetMicroCounter();
+	/*
+
+	*/
 	while ((sendBytes = fread(buf, sizeof(char), sizeof(buf), fp))>0) {
-		sendto(s, buf, sendBytes, 0, (SOCKADDR *)&server_addr, sizeof(server_addr));
+
+		while (send_simul(s, buf, sendBytes, 0) == 0)
+		{
+			//Packet Loss 발생 다시 보냄
+		}
+
 		BufferNum++;
 		totalSendBytes += sendBytes;
 		printf("In progress: %d/%dByte(s) [%d%%]\n", totalSendBytes, file_size, ((BufferNum * 100) / totalBufferNum));
-		//
-		//   while (recvfrom(s, buf, BUF_SIZE, 0, NULL, NULL) != 10)
-		//   {
-		//   sendto(s, buf, sendBytes, 0, (SOCKADDR *)&server_addr, sizeof(server_addr));
-		//   }
 	}
 	end = GetMicroCounter();
-	printf("Elapsed Time (micro seconds) : %d", end - start);
+	printf("time: %d second(s)", end - start);
+
 	closesocket(s);
 	WSACleanup();
 	getchar();
